@@ -40,6 +40,7 @@ type MongodbCollectorOpts struct {
 	CollectTopMetrics        bool
 	CollectIndexUsageStats   bool
 	CollectConnPoolStats     bool
+	CollectCollLatancyMetrics bool
 }
 
 func (in *MongodbCollectorOpts) toSessionOps() *shared.MongoSessionOpts {
@@ -301,6 +302,14 @@ func (exporter *MongodbCollector) collectMongod(client *mongo.Client, ch chan<- 
 		connPoolStats := commoncollector.GetConnPoolStats(client)
 		if connPoolStats != nil {
 			connPoolStats.Export(ch)
+		}
+	}
+
+	if exporter.Opts.CollectCollLatancyMetrics {
+		log.Debug("Collecting Collection latancy From Mongos")
+		collLatList := mongod.GetCollectionLatList(client)
+		if collLatList != nil {
+			collLatList.Export(ch)
 		}
 	}
 }
