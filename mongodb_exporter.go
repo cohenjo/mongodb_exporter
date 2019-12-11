@@ -47,6 +47,10 @@ var (
 	collectTopF                  = kingpin.Flag("collect.topmetrics", "Enable collection of table top metrics").Bool()
 	collectIndexUsageF           = kingpin.Flag("collect.indexusage", "Enable collection of per index usage stats").Bool()
 	mongodbCollectConnPoolStatsF = kingpin.Flag("collect.connpoolstats", "Collect MongoDB connpoolstats").Bool()
+	collectDatabaseProfilerF     = kingpin.Flag("collect.databaseprofiler", "Enable collection of database system.profiler metrics").Bool()
+	collectDatabaseCurrentOpsF   = kingpin.Flag("collect.currentop", "Enable collection of $currentOp metrics").Bool()
+	databaseProfilerLookbackF    = kingpin.Flag("databaseprofiler.lookback", "Size of the system.profile scan window, in seconds").Default("60").Int64()
+	databaseProfilerThresholdF   = kingpin.Flag("databaseprofiler.threshold", "Min query duration, in ms, for slow queries to count").Default("1000").Int64()
 	collectCollLatancyF          = kingpin.Flag("collect.colllatancy", "Enable collection of Collection latancy metrics").Bool()
 
 	uriF = kingpin.Flag("mongodb.uri", "MongoDB URI, format").
@@ -83,12 +87,16 @@ func main() {
 
 	programCollector := version.NewCollector(program)
 	mongodbCollector := collector.NewMongodbCollector(&collector.MongodbCollectorOpts{
-		URI:                      *uriF,
-		CollectDatabaseMetrics:   *collectDatabaseF,
-		CollectCollectionMetrics: *collectCollectionF,
-		CollectTopMetrics:        *collectTopF,
-		CollectIndexUsageStats:   *collectIndexUsageF,
-		CollectConnPoolStats:     *mongodbCollectConnPoolStatsF,
+		URI:                       *uriF,
+		CollectDatabaseMetrics:    *collectDatabaseF,
+		CollectCollectionMetrics:  *collectCollectionF,
+		CollectTopMetrics:         *collectTopF,
+		CollectIndexUsageStats:    *collectIndexUsageF,
+		CollectConnPoolStats:      *mongodbCollectConnPoolStatsF,
+		CollectDatabaseCurrentOps: *collectDatabaseCurrentOpsF,
+		CollectDatabaseProfiler:   *collectDatabaseProfilerF,
+		DatabaseProfilerLookback:  *databaseProfilerLookbackF,
+		DatabaseProfilerThreshold: *databaseProfilerThresholdF,
 		CollectCollLatancyMetrics: *collectCollLatancyF,
 	})
 	prometheus.MustRegister(programCollector, mongodbCollector)
