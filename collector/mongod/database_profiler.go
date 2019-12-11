@@ -3,6 +3,7 @@ package mongod
 import (
 	"context"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,7 +24,7 @@ var (
 		Subsystem: "profiler",
 		Name:      "slow_ops",
 		Help:      "Number of slow operations reported by $currentOp",
-	}, []string{"db", "collection"})
+	}, []string{"db", "collection", "bucket"})
 
 	// Track collections for wich slow queries have been seen so they can be re-set to
 	// zero in case no slow queries are detected during metrics refresh.
@@ -31,9 +32,14 @@ var (
 	trackedLabelsSet = make(map[string]map[string]bool)
 )
 
+type DatabaseProfilerID struct {
+	Namespace   string `bson:"ns,omitempty"`
+	Bucket   int `bson:"bucket,omitempty"`	
+}
+
 // DatabaseProfilerRecord represents records returned by the aggregate query.
 type DatabaseProfilerRecord struct {
-	Namespace   string `bson:"_id,omitempty"`
+	ID   DatabaseProfilerID `bson:"_id,omitempty"`
 	SlowQueries int    `bson:"count,omitempty"`
 }
 
@@ -82,6 +88,7 @@ func (dbStatsList *DatabaseProfilerStatsList) Export(ch chan<- prometheus.Metric
 type DatabaseProfilerStats struct {
 	Database    string
 	Collection  string
+	Bucket		int
 	SlowQueries int
 }
 
@@ -126,7 +133,7 @@ func GetDatabaseProfilerStats(client *mongo.Client, lookback int64, millis int64
 				log.Errorf("Failed to iterate database profiler stats: %s.", err)
 				return nil
 			}
-			ns := strings.SplitN(record.Namespace, ".", 2)
+			ns := strings.SplitN(record.ID.Namespace, ".", 2)
 			db := ns[0]
 			coll := ns[1]
 			stats := DatabaseProfilerStats{
@@ -156,10 +163,12 @@ func (dbStatsList *DatabaseCurrentOpStatsList) Describe(ch chan<- *prometheus.De
 
 // Export exports database stats to prometheus
 func (dbStatsList *DatabaseCurrentOpStatsList) Export(ch chan<- prometheus.Metric) {
+	log.Infoln("Starting export profiler")
 	skipValueReset := make(map[string]map[string]bool)
 	for _, member := range dbStatsList.Members {
-		ls := prometheus.Labels{"db": member.Database, "collection": member.Collection}
+		ls := prometheus.Labels{"db": member.Database, "collection": member.Collection, "bucket": strconv.Itoa(member.Bucket)}
 		slowOps.With(ls).Set(float64(member.SlowQueries))
+		log.Infoln("collect: %+v with amount: %d",ls,member.SlowQueries)
 
 		// Book-keeping around seen collections for resetting correctly.
 		if _, ok := skipValueReset[member.Database]; !ok {
@@ -183,22 +192,36 @@ func (dbStatsList *DatabaseCurrentOpStatsList) Export(ch chan<- prometheus.Metri
 		}
 	}
 	slowOps.Collect(ch)
+	log.Infoln("Finished export profiler")
 }
 
 // GetDatabaseCurrentOpStats returns $currentOp stats for all databases
 func GetDatabaseCurrentOpStats(client *mongo.Client, millis int64) *DatabaseCurrentOpStatsList {
+	log.Infoln("Starting profiler collection")
 	dbStatsList := &DatabaseCurrentOpStatsList{}
+	boundries := []int{200, 1000, 10000, 100000, 1000000}
+	branches := make([]bson.M, 5)
+
+	for i, boundery := range boundries {
+		branches[i] = bson.M{"case": bson.M{ "$lt": []interface{}{"$microsecs_running", boundery}   }, "then": boundery }		
+	  }
+
 	currentOp := bson.M{"$currentOp": bson.M{
 		"allUsers": true,
 	}}
-	match := bson.M{"$match": bson.M{
-		"microsecs_running": bson.M{"$gte": millis * 1000},
-	}}
+	// match := bson.M{"$match": bson.M{
+	// 	"microsecs_running": bson.M{"$gte": millis * 1000},
+	// }}
 	group := bson.M{"$group": bson.M{
-		"_id":   "$ns",
+		"_id":   bson.M{
+            "ns": "$ns",
+            "bucket": bson.M{
+                "$switch": bson.M{ "branches": branches } , 
+            },
+        },
 		"count": bson.M{"$sum": 1},
 	}}
-	pipeline := []bson.M{currentOp, match, group}
+	pipeline := []bson.M{currentOp, group}
 	// Need the command version of aggregate to use $currentOp.
 	//   https://docs.mongodb.com/manual/reference/command/aggregate/#dbcmd.aggregate
 	aggregate := bson.D{
@@ -213,19 +236,20 @@ func GetDatabaseCurrentOpStats(client *mongo.Client, millis int64) *DatabaseCurr
 	}
 	defer cursor.Close(context.TODO())
 	dbsToSkip := map[string]bool{
-		"admin":  true,
+		"admin":  false,
 		"config": true,
 		"local":  true,
 		"test":   true,
 	}
 	for cursor.Next(context.TODO()) {
-		record := DatabaseProfilerRecord{}
+		record := DatabaseProfilerRecord{}		
 		err := cursor.Decode(&record)
 		if err != nil {
-			log.Errorf("Failed to iterate $currentOp stats: %s.", err)
+			log.Errorf("Failed to iterate $currentOp stats: %s. ", err)
 			return nil
 		}
-		ns := strings.SplitN(record.Namespace, ".", 2)
+		log.Infoln("record: %+v", record)
+		ns := strings.SplitN(record.ID.Namespace, ".", 2)
 		db := ns[0]
 		if dbsToSkip[db] {
 			continue
@@ -234,6 +258,7 @@ func GetDatabaseCurrentOpStats(client *mongo.Client, millis int64) *DatabaseCurr
 		stats := DatabaseProfilerStats{
 			Database:    db,
 			Collection:  coll,
+			Bucket: record.ID.Bucket,
 			SlowQueries: record.SlowQueries,
 		}
 		dbStatsList.Members = append(dbStatsList.Members, stats)
