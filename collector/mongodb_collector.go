@@ -34,13 +34,17 @@ const namespace = "mongodb"
 
 // MongodbCollectorOpts is the options of the mongodb collector.
 type MongodbCollectorOpts struct {
-	URI                      string
-	CollectDatabaseMetrics   bool
-	CollectCollectionMetrics bool
-	CollectTopMetrics        bool
-	CollectIndexUsageStats   bool
-	CollectConnPoolStats     bool
+	URI                       string
+	CollectDatabaseMetrics    bool
+	CollectCollectionMetrics  bool
+	CollectTopMetrics         bool
+	CollectIndexUsageStats    bool
+	CollectConnPoolStats      bool
 	CollectCollLatancyMetrics bool
+	CollectDatabaseCurrentOps bool
+	CollectDatabaseProfiler   bool
+	DatabaseProfilerLookback  int64
+	DatabaseProfilerThreshold int64
 }
 
 func (in *MongodbCollectorOpts) toSessionOps() *shared.MongoSessionOpts {
@@ -302,6 +306,24 @@ func (exporter *MongodbCollector) collectMongod(client *mongo.Client, ch chan<- 
 		connPoolStats := commoncollector.GetConnPoolStats(client)
 		if connPoolStats != nil {
 			connPoolStats.Export(ch)
+		}
+	}
+
+	if exporter.Opts.CollectDatabaseProfiler {
+		log.Debug("Collecting DatabaseProfiler Metrics")
+		lookback := exporter.Opts.DatabaseProfilerLookback
+		threshold := exporter.Opts.DatabaseProfilerThreshold
+		dbProfilerStats := mongod.GetDatabaseProfilerStats(client, lookback, threshold)
+		if dbProfilerStats != nil {
+			dbProfilerStats.Export(ch)
+		}
+	}
+
+	if exporter.Opts.CollectDatabaseCurrentOps {
+		threshold := exporter.Opts.DatabaseProfilerThreshold
+		dbCurrentOpStats := mongod.GetDatabaseCurrentOpStats(client, threshold)
+		if dbCurrentOpStats != nil {
+			dbCurrentOpStats.Export(ch)
 		}
 	}
 

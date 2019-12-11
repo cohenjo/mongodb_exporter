@@ -2,8 +2,8 @@ package mongod
 
 import (
 	"context"
-	"time"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -23,7 +23,7 @@ var (
 		Namespace: Namespace,
 		Name:      "db_coll_latencies_histogram",
 		Help:      "collection latencies histogram statistics of mongod",
-	}, []string{"db", "coll","type", "micros"})
+	}, []string{"db", "coll", "type", "micros"})
 )
 
 // CollectionStatList contains stats from all collections
@@ -33,15 +33,12 @@ type CollectionLatList struct {
 
 // CollectionLatency contains latancy stats from a single collection
 type CollectionLatency struct {
-	Database    string
-	Name        string
-	Ns           string    `bson:"ns"`
-	LocalTime    time.Time `bson:"localTime"`
+	Database     string
+	Name         string
+	Ns           string          `bson:"ns"`
+	LocalTime    time.Time       `bson:"localTime"`
 	LatencyStats OpLatenciesStat `bson:"latencyStats"`
-	
 }
-
-
 
 // Update update each metric
 func (ls *LatencyStat) UpdateWithLabels(op string, labels prometheus.Labels, gv *prometheus.GaugeVec) {
@@ -56,7 +53,6 @@ func (ls *LatencyStat) UpdateWithLabels(op string, labels prometheus.Labels, gv 
 	// opLatenciesCountTotal.WithLabelValues(op).Set(ls.Ops)
 }
 
-
 // Export exports database stats to prometheus
 func (collStatList *CollectionLatList) Export(ch chan<- prometheus.Metric) {
 	log.Infoln("Starting export of latancy collections")
@@ -69,13 +65,13 @@ func (collStatList *CollectionLatList) Export(ch chan<- prometheus.Metric) {
 		}
 		stat := member.LatencyStats
 		if stat.Reads != nil {
-			stat.Reads.UpdateWithLabels("read",ls,collectionLatenciesHistogram)
+			stat.Reads.UpdateWithLabels("read", ls, collectionLatenciesHistogram)
 		}
 		if stat.Writes != nil {
-			stat.Writes.UpdateWithLabels("write",ls,collectionLatenciesHistogram)
+			stat.Writes.UpdateWithLabels("write", ls, collectionLatenciesHistogram)
 		}
 		if stat.Commands != nil {
-			stat.Commands.UpdateWithLabels("command",ls,collectionLatenciesHistogram)
+			stat.Commands.UpdateWithLabels("command", ls, collectionLatenciesHistogram)
 		}
 
 	}
@@ -86,7 +82,6 @@ func (collStatList *CollectionLatList) Export(ch chan<- prometheus.Metric) {
 func (collStatList *CollectionLatList) Describe(ch chan<- *prometheus.Desc) {
 	collectionLatenciesHistogram.Describe(ch)
 }
-
 
 // GetCollectionLatList returns latancies for a given database
 func GetCollectionLatList(client *mongo.Client) *CollectionLatList {
@@ -125,11 +120,11 @@ func GetCollectionLatList(client *mongo.Client) *CollectionLatList {
 					log.Error(err)
 					continue
 				}
-				log.Infoln("latancy info for: ",coll.Name)
+				log.Infoln("latancy info for: ", coll.Name)
 				collLatancy := CollectionLatency{}
 				// err = client.Database(db).Collection(coll.Name).RunCommand(context.TODO(), bson.D{{"collStats", coll.Name}, {"scale", 1}}).Decode(&collStatus)
-				pipline := []bson.M{ bson.M{"$collStats": bson.M{"latencyStats": bson.M{ "histograms": true }}}}
-				
+				pipline := []bson.M{{"$collStats": bson.M{"latencyStats": bson.M{"histograms": true}}}}
+
 				cursor, err := client.Database(db).Collection(coll.Name).Aggregate(context.Background(), pipline)
 				if err != nil {
 					_, logSFound := logSuppressCS[db+"."+coll.Name]
