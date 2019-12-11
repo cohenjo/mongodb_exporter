@@ -119,8 +119,7 @@ func GetCollectionLatList(client *mongo.Client) *CollectionLatList {
 				if err != nil {
 					log.Error(err)
 					continue
-				}
-				log.Infoln("latancy info for: ", coll.Name)
+				}			
 				collLatancy := CollectionLatency{}
 				// err = client.Database(db).Collection(coll.Name).RunCommand(context.TODO(), bson.D{{"collStats", coll.Name}, {"scale", 1}}).Decode(&collStatus)
 				pipline := []bson.M{{"$collStats": bson.M{"latencyStats": bson.M{"histograms": true}}}}
